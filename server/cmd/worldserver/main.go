@@ -18,6 +18,7 @@ import (
 
 func main() {
 	configPath := flag.String("config", "server/config/dev.yaml", "path to yaml config")
+	checkConfig := flag.Bool("check-config", false, "load config and exit")
 	flag.Parse()
 
 	cfg, err := config.Load(*configPath)
@@ -28,6 +29,10 @@ func main() {
 	w, err := world.New(cfg)
 	if err != nil {
 		log.Fatalf("create world: %v", err)
+	}
+	if *checkConfig {
+		fmt.Printf("config ok: listen=%s, aoi=%s, tick_rate=%d\n", cfg.Server.ListenAddr, w.AOIName(), cfg.Server.TickRate)
+		return
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

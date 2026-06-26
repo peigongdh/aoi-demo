@@ -10,6 +10,19 @@ go run ./server/cmd/worldserver --config ./server/config/dev.yaml
 
 The default server listens on `0.0.0.0:8100` and accepts WebSocket clients at `/ws`.
 
+You can also manage the server with the helper script:
+
+```bash
+./scripts/worldserver.sh start
+./scripts/worldserver.sh status
+./scripts/worldserver.sh reload
+./scripts/worldserver.sh restart
+./scripts/worldserver.sh stop
+```
+
+Runtime files are written to `tmp/worldserver/`. Use `CONFIG=/path/to/dev.yaml ./scripts/worldserver.sh reload`
+to apply another config file after validation. Reload applies config changes with a graceful restart.
+
 ## Run the client
 
 ```bash
