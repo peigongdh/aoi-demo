@@ -1,0 +1,24 @@
+server:
+  listen_addr: "0.0.0.0:8100"
+  tick_rate: 20
+
+world:
+  width: 2000
+  height: 2000
+  npc_count: 100
+
+player:
+  speed: 180
+  aoi_radius: 200
+
+npc:
+  speed: 80
+  random_walk: true
+
+aoi:
+  type: "grid"
+  grid_size: 200
+
+sync:
+  type: "snapshot"
+  snapshot_rate: 10
