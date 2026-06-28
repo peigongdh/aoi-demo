@@ -72,19 +72,21 @@ export class NetworkClient {
     this.onStatus("disconnected");
   }
 
-  sendInput(input: InputState): void {
-    this.send("input", input);
+  sendInput(input: InputState): number | undefined {
+    return this.send("input", input);
   }
 
   private ping(): void {
     this.send("ping", { client_time: performance.now() });
   }
 
-  private send(type: string, payload: unknown): void {
+  private send(type: string, payload: unknown): number | undefined {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      return;
+      return undefined;
     }
-    this.socket.send(JSON.stringify({ type, seq: this.seq++, payload }));
+    const seq = this.seq++;
+    this.socket.send(JSON.stringify({ type, seq, payload }));
+    return seq;
   }
 
   private clearPing(): void {

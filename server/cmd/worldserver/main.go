@@ -31,7 +31,7 @@ func main() {
 		log.Fatalf("create world: %v", err)
 	}
 	if *checkConfig {
-		fmt.Printf("config ok: listen=%s, aoi=%s, tick_rate=%d\n", cfg.Server.ListenAddr, w.AOIName(), cfg.Server.TickRate)
+		fmt.Printf("config ok: listen=%s, aoi=%s, sync=%s, tick_rate=%d\n", cfg.Server.ListenAddr, w.AOIName(), w.SyncName(), cfg.Server.TickRate)
 		return
 	}
 
@@ -39,7 +39,7 @@ func main() {
 	defer stop()
 
 	server := network.NewServer(cfg, w)
-	fmt.Printf("worldserver listening on %s/ws, aoi=%s, tick_rate=%d\n", cfg.Server.ListenAddr, w.AOIName(), cfg.Server.TickRate)
+	fmt.Printf("worldserver listening on %s/ws, aoi=%s, sync=%s, tick_rate=%d\n", cfg.Server.ListenAddr, w.AOIName(), w.SyncName(), cfg.Server.TickRate)
 
 	if err := server.Start(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server stopped: %v", err)

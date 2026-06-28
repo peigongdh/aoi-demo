@@ -9,12 +9,13 @@ import (
 )
 
 type Config struct {
-	Server ServerConfig
-	World  WorldConfig
-	Player PlayerConfig
-	NPC    NPCConfig
-	AOI    AOIConfig
-	Sync   SyncConfig
+	Server  ServerConfig
+	World   WorldConfig
+	Player  PlayerConfig
+	NPC     NPCConfig
+	AOI     AOIConfig
+	Sync    SyncConfig
+	Network NetworkConfig
 }
 
 type ServerConfig struct {
@@ -44,8 +45,16 @@ type AOIConfig struct {
 }
 
 type SyncConfig struct {
-	Type         string
-	SnapshotRate int
+	Type              string
+	SnapshotRate      int
+	PriorityLowRate   int
+	PriorityNearRatio float64
+}
+
+type NetworkConfig struct {
+	LatencyMS  int     `json:"latency_ms"`
+	JitterMS   int     `json:"jitter_ms"`
+	PacketLoss float64 `json:"packet_loss"`
 }
 
 func DefaultConfig() Config {
@@ -55,7 +64,13 @@ func DefaultConfig() Config {
 		Player: PlayerConfig{Speed: 180, AOIRadius: 200},
 		NPC:    NPCConfig{Speed: 80, RandomWalk: true},
 		AOI:    AOIConfig{Type: "grid", GridSize: 200},
-		Sync:   SyncConfig{Type: "snapshot", SnapshotRate: 10},
+		Sync: SyncConfig{
+			Type:              "snapshot",
+			SnapshotRate:      10,
+			PriorityLowRate:   2,
+			PriorityNearRatio: 0.5,
+		},
+		Network: NetworkConfig{LatencyMS: 0, JitterMS: 0, PacketLoss: 0},
 	}
 }
 
@@ -163,8 +178,30 @@ func normalize(cfg *Config) {
 	if cfg.Sync.Type == "" {
 		cfg.Sync.Type = "snapshot"
 	}
+	cfg.Sync.Type = strings.ToLower(cfg.Sync.Type)
 	if cfg.Sync.SnapshotRate <= 0 {
 		cfg.Sync.SnapshotRate = 10
+	}
+	if cfg.Sync.PriorityLowRate <= 0 {
+		cfg.Sync.PriorityLowRate = 2
+	}
+	if cfg.Sync.PriorityNearRatio <= 0 {
+		cfg.Sync.PriorityNearRatio = 0.5
+	}
+	if cfg.Sync.PriorityNearRatio > 1 {
+		cfg.Sync.PriorityNearRatio = 1
+	}
+	if cfg.Network.LatencyMS < 0 {
+		cfg.Network.LatencyMS = 0
+	}
+	if cfg.Network.JitterMS < 0 {
+		cfg.Network.JitterMS = 0
+	}
+	if cfg.Network.PacketLoss < 0 {
+		cfg.Network.PacketLoss = 0
+	}
+	if cfg.Network.PacketLoss > 1 {
+		cfg.Network.PacketLoss = 1
 	}
 }
 
@@ -253,6 +290,39 @@ func setValue(cfg *Config, section, key, value string) error {
 				return err
 			}
 			cfg.Sync.SnapshotRate = v
+		case "priority_low_rate":
+			v, err := strconv.Atoi(value)
+			if err != nil {
+				return err
+			}
+			cfg.Sync.PriorityLowRate = v
+		case "priority_near_ratio":
+			v, err := strconv.ParseFloat(value, 64)
+			if err != nil {
+				return err
+			}
+			cfg.Sync.PriorityNearRatio = v
+		}
+	case "network":
+		switch key {
+		case "latency_ms":
+			v, err := strconv.Atoi(value)
+			if err != nil {
+				return err
+			}
+			cfg.Network.LatencyMS = v
+		case "jitter_ms":
+			v, err := strconv.Atoi(value)
+			if err != nil {
+				return err
+			}
+			cfg.Network.JitterMS = v
+		case "packet_loss":
+			v, err := strconv.ParseFloat(value, 64)
+			if err != nil {
+				return err
+			}
+			cfg.Network.PacketLoss = v
 		}
 	default:
 		return fmt.Errorf("unknown section %q", section)

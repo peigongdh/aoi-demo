@@ -50,23 +50,26 @@ type PongPayload struct {
 }
 
 type WelcomePayload struct {
-	PlayerID   entity.EntityID `json:"player_id"`
-	MapWidth   float64         `json:"map_width"`
-	MapHeight  float64         `json:"map_height"`
-	AOIType    string          `json:"aoi_type"`
-	AOIRadius  float64         `json:"aoi_radius"`
-	GridSize   float64         `json:"grid_size"`
-	ServerTick uint64          `json:"server_tick"`
-	Entity     EntityState     `json:"entity"`
+	PlayerID    entity.EntityID `json:"player_id"`
+	MapWidth    float64         `json:"map_width"`
+	MapHeight   float64         `json:"map_height"`
+	AOIType     string          `json:"aoi_type"`
+	AOIRadius   float64         `json:"aoi_radius"`
+	GridSize    float64         `json:"grid_size"`
+	SyncType    string          `json:"sync_type"`
+	PlayerSpeed float64         `json:"player_speed"`
+	ServerTick  uint64          `json:"server_tick"`
+	Entity      EntityState     `json:"entity"`
 }
 
 type EntityState struct {
-	ID     entity.EntityID   `json:"id"`
-	Type   entity.EntityType `json:"type"`
-	Name   string            `json:"name,omitempty"`
-	X      float64           `json:"x"`
-	Y      float64           `json:"y"`
-	Radius float64           `json:"radius"`
+	ID           entity.EntityID   `json:"id"`
+	Type         entity.EntityType `json:"type"`
+	Name         string            `json:"name,omitempty"`
+	X            float64           `json:"x"`
+	Y            float64           `json:"y"`
+	Radius       float64           `json:"radius"`
+	LastInputSeq uint64            `json:"last_input_seq,omitempty"`
 }
 
 type EntityEnterPayload struct {
@@ -81,6 +84,9 @@ type EntityUpdatePayload struct {
 	Entities      []EntityState `json:"entities"`
 	DebugEntities []EntityState `json:"debug_entities,omitempty"`
 	ServerTick    uint64        `json:"server_tick"`
+	ServerTime    int64         `json:"server_time"`
+	SyncType      string        `json:"sync_type"`
+	FullSnapshot  bool          `json:"full_snapshot"`
 	Stats         ServerStats   `json:"stats"`
 }
 
@@ -88,6 +94,7 @@ type ServerStats struct {
 	PlayerCount    int     `json:"player_count"`
 	NPCCount       int     `json:"npc_count"`
 	EntityCount    int     `json:"entity_count"`
+	SyncType       string  `json:"sync_type"`
 	AOIQueryMS     float64 `json:"aoi_query_ms"`
 	TickDurationMS float64 `json:"tick_duration_ms"`
 	MessagesOut    int     `json:"messages_out"`

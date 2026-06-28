@@ -16,11 +16,18 @@ const connectButton = button("connect");
 const disconnectButton = button("disconnect");
 const aoiSelect = select("aoi-type");
 const applyAOIButton = button("apply-aoi");
+const syncSelect = select("sync-type");
+const applySyncButton = button("apply-sync");
+const latencyInput = input("latency-ms");
+const jitterInput = input("jitter-ms");
+const packetLossInput = input("packet-loss");
+const applyNetworkButton = button("apply-network");
 const keys = new Set<string>();
 let lastPanelRender = 0;
+let lastFrame = performance.now();
 
 serverInput.value = defaultWebSocketURL();
-void refreshAOIOptions();
+void refreshServerControls();
 
 const network = new NetworkClient(handleMessage, (status) => panel.setStatus(status));
 
@@ -33,8 +40,14 @@ disconnectButton.addEventListener("click", () => network.disconnect());
 applyAOIButton.addEventListener("click", () => {
   void applyAOISelection();
 });
+applySyncButton.addEventListener("click", () => {
+  void applySyncSelection();
+});
+applyNetworkButton.addEventListener("click", () => {
+  void applyNetworkSimulation();
+});
 serverInput.addEventListener("change", () => {
-  void refreshAOIOptions();
+  void refreshServerControls();
 });
 
 window.addEventListener("resize", () => renderer.resize());
@@ -51,10 +64,16 @@ window.addEventListener("keyup", (event) => {
   }
 });
 
-window.setInterval(() => network.sendInput(currentInput()), 50);
+window.setInterval(() => {
+  const seq = network.sendInput(currentInput());
+  world.recordLocalInput(seq);
+}, 50);
 
 function frame(now: number): void {
+  const dt = now - lastFrame;
+  lastFrame = now;
   world.latencyMs = network.latencyMs;
+  world.predictLocal(currentInput(), dt, panel.controls.prediction);
   renderer.render(world, panel.controls, now);
   if (now - lastPanelRender > 100) {
     panel.render(world);
@@ -70,6 +89,8 @@ function handleMessage(message: ServerMessage): void {
       world.applyWelcome(message.payload);
       ensureAOIOption(message.payload.aoi_type);
       aoiSelect.value = message.payload.aoi_type;
+      ensureSyncOption(message.payload.sync_type || "snapshot");
+      syncSelect.value = message.payload.sync_type || "snapshot";
       break;
     case "entity_enter":
       world.applyEnter(message.payload.entity);
@@ -104,6 +125,22 @@ interface AOIConfigResponse {
   algorithms: string[];
 }
 
+interface SyncConfigResponse {
+  type: string;
+  strategies: string[];
+  snapshot_rate: number;
+}
+
+interface NetworkConfigResponse {
+  latency_ms: number;
+  jitter_ms: number;
+  packet_loss: number;
+}
+
+async function refreshServerControls(): Promise<void> {
+  await Promise.all([refreshAOIOptions(), refreshSyncOptions(), refreshNetworkSimulation()]);
+}
+
 async function refreshAOIOptions(): Promise<void> {
   try {
     const config = await fetchAOIConfig();
@@ -111,6 +148,25 @@ async function refreshAOIOptions(): Promise<void> {
     world.aoiType = config.type;
   } catch (error) {
     console.warn("Failed to load AOI config", error);
+  }
+}
+
+async function refreshSyncOptions(): Promise<void> {
+  try {
+    const config = await fetchSyncConfig();
+    setSyncOptions(config.strategies, config.type);
+    world.syncType = config.type;
+  } catch (error) {
+    console.warn("Failed to load sync config", error);
+  }
+}
+
+async function refreshNetworkSimulation(): Promise<void> {
+  try {
+    const config = await fetchNetworkConfig();
+    setNetworkInputs(config);
+  } catch (error) {
+    console.warn("Failed to load network simulation config", error);
   }
 }
 
@@ -130,6 +186,41 @@ async function applyAOISelection(): Promise<void> {
   }
 }
 
+async function applySyncSelection(): Promise<void> {
+  const originalText = applySyncButton.textContent || "Apply";
+  applySyncButton.disabled = true;
+  applySyncButton.textContent = "Applying";
+  try {
+    const config = await updateSyncConfig(syncSelect.value);
+    setSyncOptions(config.strategies, config.type);
+    world.syncType = config.type;
+  } catch (error) {
+    console.warn("Failed to switch sync config", error);
+  } finally {
+    applySyncButton.disabled = false;
+    applySyncButton.textContent = originalText;
+  }
+}
+
+async function applyNetworkSimulation(): Promise<void> {
+  const originalText = applyNetworkButton.textContent || "Apply";
+  applyNetworkButton.disabled = true;
+  applyNetworkButton.textContent = "Applying";
+  try {
+    const config = await updateNetworkConfig({
+      latency_ms: readNumber(latencyInput),
+      jitter_ms: readNumber(jitterInput),
+      packet_loss: readNumber(packetLossInput) / 100,
+    });
+    setNetworkInputs(config);
+  } catch (error) {
+    console.warn("Failed to update network simulation config", error);
+  } finally {
+    applyNetworkButton.disabled = false;
+    applyNetworkButton.textContent = originalText;
+  }
+}
+
 async function fetchAOIConfig(): Promise<AOIConfigResponse> {
   const response = await fetch(`${apiBaseURL()}/api/aoi`);
   return readAOIConfig(response);
@@ -144,6 +235,34 @@ async function updateAOIConfig(type: string): Promise<AOIConfigResponse> {
   return readAOIConfig(response);
 }
 
+async function fetchSyncConfig(): Promise<SyncConfigResponse> {
+  const response = await fetch(`${apiBaseURL()}/api/sync`);
+  return readSyncConfig(response);
+}
+
+async function updateSyncConfig(type: string): Promise<SyncConfigResponse> {
+  const response = await fetch(`${apiBaseURL()}/api/sync`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type }),
+  });
+  return readSyncConfig(response);
+}
+
+async function fetchNetworkConfig(): Promise<NetworkConfigResponse> {
+  const response = await fetch(`${apiBaseURL()}/api/network`);
+  return readNetworkConfig(response);
+}
+
+async function updateNetworkConfig(config: NetworkConfigResponse): Promise<NetworkConfigResponse> {
+  const response = await fetch(`${apiBaseURL()}/api/network`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  return readNetworkConfig(response);
+}
+
 async function readAOIConfig(response: Response): Promise<AOIConfigResponse> {
   if (!response.ok) {
     throw new Error(`AOI config request failed: ${response.status}`);
@@ -151,6 +270,28 @@ async function readAOIConfig(response: Response): Promise<AOIConfigResponse> {
   const config = (await response.json()) as AOIConfigResponse;
   if (!config.type || !Array.isArray(config.algorithms)) {
     throw new Error("AOI config response is invalid");
+  }
+  return config;
+}
+
+async function readSyncConfig(response: Response): Promise<SyncConfigResponse> {
+  if (!response.ok) {
+    throw new Error(`Sync config request failed: ${response.status}`);
+  }
+  const config = (await response.json()) as SyncConfigResponse;
+  if (!config.type || !Array.isArray(config.strategies)) {
+    throw new Error("Sync config response is invalid");
+  }
+  return config;
+}
+
+async function readNetworkConfig(response: Response): Promise<NetworkConfigResponse> {
+  if (!response.ok) {
+    throw new Error(`Network config request failed: ${response.status}`);
+  }
+  const config = (await response.json()) as NetworkConfigResponse;
+  if (!Number.isFinite(config.latency_ms) || !Number.isFinite(config.jitter_ms) || !Number.isFinite(config.packet_loss)) {
+    throw new Error("Network config response is invalid");
   }
   return config;
 }
@@ -172,14 +313,37 @@ function setAOIOptions(algorithms: string[], selected: string): void {
   aoiSelect.value = selected;
 }
 
+function setSyncOptions(strategies: string[], selected: string): void {
+  const values = [...new Set([...strategies, selected].filter(Boolean))];
+  syncSelect.replaceChildren(...values.map((type) => new Option(type, type)));
+  syncSelect.value = selected;
+}
+
+function setNetworkInputs(config: NetworkConfigResponse): void {
+  latencyInput.value = String(config.latency_ms);
+  jitterInput.value = String(config.jitter_ms);
+  packetLossInput.value = String(Math.round(config.packet_loss * 100));
+}
+
 function ensureAOIOption(type: string): void {
   if (![...aoiSelect.options].some((option) => option.value === type)) {
     aoiSelect.append(new Option(type, type));
   }
 }
 
+function ensureSyncOption(type: string): void {
+  if (![...syncSelect.options].some((option) => option.value === type)) {
+    syncSelect.append(new Option(type, type));
+  }
+}
+
 function isMovementKey(key: string): boolean {
   return ["w", "a", "s", "d", "arrowup", "arrowleft", "arrowdown", "arrowright"].includes(key.toLowerCase());
+}
+
+function readNumber(el: HTMLInputElement): number {
+  const value = Number(el.value);
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
 function input(id: string): HTMLInputElement {

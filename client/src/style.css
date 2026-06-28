@@ -71,6 +71,7 @@ button#disconnect:hover {
 .topbar {
   min-height: 58px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 18px;
   padding: 10px 14px;
@@ -116,7 +117,14 @@ button#disconnect:hover {
   min-width: 130px;
 }
 
-.aoi-switch {
+.field.tiny {
+  width: 86px;
+  min-width: 74px;
+}
+
+.aoi-switch,
+.sync-switch,
+.network-switch {
   display: flex;
   align-items: end;
   gap: 8px;
@@ -289,12 +297,18 @@ dd {
     min-width: 0;
   }
 
-  .aoi-switch {
+  .aoi-switch,
+  .sync-switch,
+  .network-switch {
     width: 100%;
   }
 
   .field.compact {
     flex: 0 1 180px;
+  }
+
+  .field.tiny {
+    flex: 1 1 96px;
   }
 
   .status-line {
@@ -318,8 +332,11 @@ dd {
     flex-wrap: wrap;
   }
 
-  .aoi-switch {
+  .aoi-switch,
+  .sync-switch,
+  .network-switch {
     align-items: stretch;
+    flex-wrap: wrap;
   }
 
   .field {

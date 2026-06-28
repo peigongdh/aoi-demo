@@ -6,6 +6,8 @@ export interface ControlState {
   showGrid: boolean;
   showAOI: boolean;
   showAll: boolean;
+  interpolation: boolean;
+  prediction: boolean;
 }
 
 export class DebugPanel {
@@ -19,6 +21,8 @@ export class DebugPanel {
   private gridInput: HTMLInputElement;
   private aoiInput: HTMLInputElement;
   private allInput: HTMLInputElement;
+  private interpolationInput: HTMLInputElement;
+  private predictionInput: HTMLInputElement;
   private lastWorldStats = "";
   private lastPlayerStats = "";
   private lastEventLog = "";
@@ -33,9 +37,18 @@ export class DebugPanel {
     this.gridInput = mustInput(root, "show-grid");
     this.aoiInput = mustInput(root, "show-aoi");
     this.allInput = mustInput(root, "show-all");
+    this.interpolationInput = mustInput(root, "interpolation");
+    this.predictionInput = mustInput(root, "prediction");
     this.controls = this.readControls();
 
-    for (const input of [this.debugInput, this.gridInput, this.aoiInput, this.allInput]) {
+    for (const input of [
+      this.debugInput,
+      this.gridInput,
+      this.aoiInput,
+      this.allInput,
+      this.interpolationInput,
+      this.predictionInput,
+    ]) {
       input.addEventListener("change", () => {
         this.controls = this.readControls();
       });
@@ -51,6 +64,7 @@ export class DebugPanel {
     const player = world.localPlayer;
     const worldStats = definitionList([
       ["AOI", world.aoiType],
+      ["Sync", world.syncType],
       ["Tick", String(world.serverTick)],
       ["Ping", `${world.latencyMs.toFixed(0)} ms`],
       ["Visible", String(world.visibleCount())],
@@ -72,6 +86,9 @@ export class DebugPanel {
       ["PlayerId", world.localPlayerId || "-"],
       ["Position", player ? `${player.x.toFixed(1)}, ${player.y.toFixed(1)}` : "-"],
       ["Radius", world.aoiRadius.toFixed(0)],
+      ["Ack", String(world.ackInputSeq)],
+      ["Pending", String(world.pendingInputCount())],
+      ["Correction", `${world.reconciliationError.toFixed(1)} px`],
     ]);
     if (playerStats !== this.lastPlayerStats) {
       this.playerStats.innerHTML = playerStats;
@@ -93,6 +110,8 @@ export class DebugPanel {
       showGrid: this.gridInput.checked,
       showAOI: this.aoiInput.checked,
       showAll: this.allInput.checked,
+      interpolation: this.interpolationInput.checked,
+      prediction: this.predictionInput.checked,
     };
   }
 }

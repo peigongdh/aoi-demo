@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>local.aoi-demo-worldserver</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/bash</string>
+      <string>-lc</string>
+      <string>echo $$ &gt; /Users/zhangpei/project/aoi-demo/tmp/worldserver/worldserver.pid; exec /Users/zhangpei/project/aoi-demo/tmp/worldserver/worldserver --config /Users/zhangpei/project/aoi-demo/server/config/dev.yaml</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/zhangpei/project/aoi-demo</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/zhangpei/project/aoi-demo/tmp/worldserver/worldserver.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/zhangpei/project/aoi-demo/tmp/worldserver/worldserver.log</string>
+  </dict>
+</plist>

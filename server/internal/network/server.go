@@ -20,6 +20,7 @@ type Server struct {
 	cfg      config.Config
 	world    *world.World
 	http     *http.Server
+	netem    *Simulator
 	nextID   uint64
 	mu       sync.RWMutex
 	clients  map[string]*Client
@@ -36,6 +37,7 @@ func NewServer(cfg config.Config, world *world.World) *Server {
 	return &Server{
 		cfg:      cfg,
 		world:    world,
+		netem:    NewSimulator(cfg.Network),
 		clients:  map[string]*Client{},
 		byPlayer: map[entity.EntityID]*Client{},
 	}
@@ -45,6 +47,8 @@ func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", s.handleWebSocket)
 	mux.HandleFunc("/api/aoi", s.handleAOI)
+	mux.HandleFunc("/api/sync", s.handleSync)
+	mux.HandleFunc("/api/network", s.handleNetwork)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
@@ -114,13 +118,7 @@ func (s *Server) dispatch(outbound map[entity.EntityID][]protocol.Message) {
 	s.mu.RUnlock()
 
 	for _, delivery := range deliveries {
-		for _, message := range delivery.messages {
-			if err := delivery.client.Conn.WriteJSON(message); err != nil {
-				fmt.Printf("send to %s failed: %v\n", delivery.client.ID, err)
-				s.unregister(delivery.client)
-				break
-			}
-		}
+		s.sendMessages(delivery.client, delivery.messages)
 	}
 }
 
@@ -198,7 +196,7 @@ func (s *Server) handleMessage(client *Client, data []byte) error {
 		if err := json.Unmarshal(message.Payload, &payload); err != nil {
 			return err
 		}
-		return client.Conn.WriteJSON(protocol.Message{
+		s.sendMessage(client, protocol.Message{
 			Type: protocol.TypePong,
 			Payload: protocol.PongPayload{
 				ClientTime: payload.ClientTime,
@@ -231,10 +229,54 @@ func (s *Server) handleJoin(client *Client, message protocol.IncomingMessage) er
 	s.byPlayer[player.ID()] = client
 	s.mu.Unlock()
 
-	return client.Conn.WriteJSON(protocol.Message{
+	s.sendMessage(client, protocol.Message{
 		Type:    protocol.TypeWelcome,
 		Payload: welcome,
 	})
+	return nil
+}
+
+func (s *Server) sendMessages(client *Client, messages []protocol.Message) {
+	if len(messages) == 0 {
+		return
+	}
+
+	delay := s.netem.Delay()
+	send := func() {
+		for _, message := range messages {
+			if s.netem.ShouldDrop(message.Type) {
+				continue
+			}
+			if err := client.Conn.WriteJSON(message); err != nil {
+				fmt.Printf("send to %s failed: %v\n", client.ID, err)
+				s.unregister(client)
+				return
+			}
+		}
+	}
+	if delay <= 0 {
+		send()
+		return
+	}
+	time.AfterFunc(delay, send)
+}
+
+func (s *Server) sendMessage(client *Client, message protocol.Message) {
+	plan := s.netem.Plan(message.Type)
+	if plan.Drop {
+		return
+	}
+	send := func() {
+		if err := client.Conn.WriteJSON(message); err != nil {
+			fmt.Printf("send to %s failed: %v\n", client.ID, err)
+			s.unregister(client)
+		}
+	}
+	if plan.Delay <= 0 {
+		send()
+		return
+	}
+	time.AfterFunc(plan.Delay, send)
 }
 
 func (s *Server) handleAOI(w http.ResponseWriter, r *http.Request) {
@@ -266,6 +308,58 @@ func (s *Server) handleAOI(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
+	setAPIHeaders(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		writeSyncResponse(w, s.world.SyncName(), s.cfg.Sync.SnapshotRate)
+	case http.MethodPost:
+		var payload struct {
+			Type string `json:"type"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := s.world.SetSyncType(payload.Type); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeSyncResponse(w, s.world.SyncName(), s.cfg.Sync.SnapshotRate)
+	default:
+		w.Header().Set("Allow", "GET, POST, OPTIONS")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleNetwork(w http.ResponseWriter, r *http.Request) {
+	setAPIHeaders(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		writeNetworkResponse(w, s.netem.Config())
+	case http.MethodPost:
+		var payload config.NetworkConfig
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeNetworkResponse(w, s.netem.Update(payload))
+	default:
+		w.Header().Set("Allow", "GET, POST, OPTIONS")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 func setAPIHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -280,5 +374,31 @@ func writeAOIResponse(w http.ResponseWriter, current string) {
 	}{
 		Type:       current,
 		Algorithms: []string{"bruteforce", "grid", "tower"},
+	})
+}
+
+func writeSyncResponse(w http.ResponseWriter, current string, snapshotRate int) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(struct {
+		Type         string   `json:"type"`
+		Strategies   []string `json:"strategies"`
+		SnapshotRate int      `json:"snapshot_rate"`
+	}{
+		Type:         current,
+		Strategies:   []string{"snapshot", "delta", "interpolation", "priority"},
+		SnapshotRate: snapshotRate,
+	})
+}
+
+func writeNetworkResponse(w http.ResponseWriter, cfg config.NetworkConfig) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(struct {
+		LatencyMS  int     `json:"latency_ms"`
+		JitterMS   int     `json:"jitter_ms"`
+		PacketLoss float64 `json:"packet_loss"`
+	}{
+		LatencyMS:  cfg.LatencyMS,
+		JitterMS:   cfg.JitterMS,
+		PacketLoss: cfg.PacketLoss,
 	})
 }

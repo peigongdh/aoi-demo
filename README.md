@@ -42,3 +42,28 @@ aoi:
   type: "grid"       # bruteforce, grid, or tower
   grid_size: 200
 ```
+
+## Sync and network simulation
+
+Use the Sync selector in the client toolbar to switch between `snapshot`, `delta`, `interpolation`, and `priority`.
+The server also exposes `GET/POST /api/sync` for runtime switching.
+
+The toolbar network controls simulate outbound server delay and packet loss:
+
+- `Latency` and `Jitter` are one-way milliseconds.
+- `Loss %` drops realtime `entity_update` messages only; join and AOI enter/leave messages stay reliable.
+
+The same defaults can be edited in `server/config/dev.yaml`:
+
+```yaml
+sync:
+  type: "snapshot"
+  snapshot_rate: 10
+  priority_low_rate: 2
+  priority_near_ratio: 0.5
+
+network:
+  latency_ms: 0
+  jitter_ms: 0
+  packet_loss: 0
+```

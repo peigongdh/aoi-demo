@@ -5,6 +5,8 @@ export interface RenderOptions {
   showGrid: boolean;
   showAOI: boolean;
   showAll: boolean;
+  interpolation: boolean;
+  prediction: boolean;
 }
 
 interface Viewport {
@@ -112,7 +114,7 @@ export class Renderer {
     if (!options.showAOI) {
       return;
     }
-    const player = world.localPlayer;
+    const player = world.localPlayer ? world.displayEntity(world.localPlayer, performance.now(), false, options.prediction) : undefined;
     if (!player) {
       return;
     }
@@ -146,7 +148,8 @@ export class Renderer {
     for (const entity of entities) {
       const isVisible = visible.has(entity.id);
       const isGhost = options.debugMode && options.showAll && !isVisible;
-      this.drawEntity(entity, viewport, world.localPlayerId, world.flashes.get(entity.id), isGhost, options.debugMode);
+      const display = world.displayEntity(entity, performance.now(), options.interpolation, options.prediction);
+      this.drawEntity(display, viewport, world.localPlayerId, world.flashes.get(entity.id), isGhost, options.debugMode);
     }
   }
 

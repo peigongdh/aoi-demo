@@ -38,6 +38,10 @@ func New(cfg config.Config) (*World, error) {
 	if err != nil {
 		return nil, err
 	}
+	syncStrategy, err := makeSync(cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	w := &World{
 		cfg: cfg,
@@ -47,7 +51,7 @@ func New(cfg config.Config) (*World, error) {
 		},
 		entities: entities,
 		aoi:      aoiManager,
-		sync:     syncstrategy.NewSnapshotStrategy(),
+		sync:     syncStrategy,
 		inputs:   map[entity.EntityID]protocol.InputPayload{},
 		rng:      rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
@@ -69,6 +73,10 @@ func makeAOI(cfg config.Config) (aoi.Manager, error) {
 	default:
 		return nil, fmt.Errorf("unsupported aoi type %q", cfg.AOI.Type)
 	}
+}
+
+func makeSync(cfg config.Config) (syncstrategy.Strategy, error) {
+	return syncstrategy.New(cfg.Sync, cfg.Server.TickRate)
 }
 
 func (w *World) AddPlayer(connID, name string) (*entity.Player, protocol.WelcomePayload, error) {
@@ -99,14 +107,16 @@ func (w *World) AddPlayer(connID, name string) (*entity.Player, protocol.Welcome
 	}
 
 	welcome := protocol.WelcomePayload{
-		PlayerID:   player.ID(),
-		MapWidth:   w.worldMap.Width,
-		MapHeight:  w.worldMap.Height,
-		AOIType:    w.aoi.Name(),
-		AOIRadius:  player.AOIRadius,
-		GridSize:   w.cfg.AOI.GridSize,
-		ServerTick: w.tick,
-		Entity:     syncstrategy.StateFromEntity(player),
+		PlayerID:    player.ID(),
+		MapWidth:    w.worldMap.Width,
+		MapHeight:   w.worldMap.Height,
+		AOIType:     w.aoi.Name(),
+		AOIRadius:   player.AOIRadius,
+		GridSize:    w.cfg.AOI.GridSize,
+		SyncType:    w.sync.Name(),
+		PlayerSpeed: w.cfg.Player.Speed,
+		ServerTick:  w.tick,
+		Entity:      syncstrategy.StateFromEntity(player),
 	}
 	return player, welcome, nil
 }
@@ -157,24 +167,26 @@ func (w *World) Tick(dt time.Duration) map[entity.EntityID][]protocol.Message {
 	players := w.entities.Players()
 	npcs := w.entities.NPCs()
 	entities := w.entities.All()
-	messagesOut := 0
-	for _, player := range players {
-		messagesOut += len(eventsByPlayer[player.ID()]) + 1
-	}
 	w.stats = protocol.ServerStats{
 		PlayerCount:    len(players),
 		NPCCount:       len(npcs),
 		EntityCount:    len(entities),
+		SyncType:       w.sync.Name(),
 		AOIQueryMS:     durationMS(aoiDuration),
 		TickDurationMS: durationMS(time.Since(tickStart)),
-		MessagesOut:    messagesOut,
 		AOIEvents:      len(events),
 	}
 
 	out := map[entity.EntityID][]protocol.Message{}
+	messagesOut := 0
 	for _, player := range players {
-		out[player.ID()] = w.sync.BuildMessages(player, w, eventsByPlayer[player.ID()])
+		messages := w.sync.BuildMessages(player, w, eventsByPlayer[player.ID()])
+		out[player.ID()] = messages
+		messagesOut += len(messages)
 	}
+	w.stats.MessagesOut = messagesOut
+	w.stats.TickDurationMS = durationMS(time.Since(tickStart))
+	patchStats(out, w.stats)
 	return out
 }
 
@@ -323,6 +335,37 @@ func (w *World) SetAOIType(aoiType string) error {
 	return nil
 }
 
+func (w *World) SyncName() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return w.sync.Name()
+}
+
+func (w *World) SetSyncType(syncType string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	nextType := strings.ToLower(strings.TrimSpace(syncType))
+	if nextType == "" {
+		return fmt.Errorf("sync type is required")
+	}
+	if nextType == w.sync.Name() {
+		return nil
+	}
+
+	nextCfg := w.cfg
+	nextCfg.Sync.Type = nextType
+	nextSync, err := makeSync(nextCfg)
+	if err != nil {
+		return err
+	}
+	w.sync = nextSync
+	w.cfg = nextCfg
+	w.stats.SyncType = nextSync.Name()
+	return nil
+}
+
 func (w *World) Stats() protocol.ServerStats {
 	return w.stats
 }
@@ -362,4 +405,19 @@ func (w *World) TickID() uint64 {
 
 func durationMS(duration time.Duration) float64 {
 	return float64(duration.Microseconds()) / 1000
+}
+
+func patchStats(out map[entity.EntityID][]protocol.Message, stats protocol.ServerStats) {
+	for playerID, messages := range out {
+		for i, message := range messages {
+			payload, ok := message.Payload.(protocol.EntityUpdatePayload)
+			if !ok {
+				continue
+			}
+			payload.Stats = stats
+			message.Payload = payload
+			messages[i] = message
+		}
+		out[playerID] = messages
+	}
 }

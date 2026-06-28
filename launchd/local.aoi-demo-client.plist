@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>local.aoi-demo-client</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/bash</string>
+      <string>-lc</string>
+      <string>echo $$ &gt; /Users/zhangpei/project/aoi-demo/tmp/client/client.pid; exec /Users/zhangpei/.nvm/versions/node/v24.16.0/bin/node /Users/zhangpei/project/aoi-demo/client/node_modules/vite/bin/vite.js --host 0.0.0.0 --port 8101</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/zhangpei/project/aoi-demo/client</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/zhangpei/project/aoi-demo/tmp/client/client.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/zhangpei/project/aoi-demo/tmp/client/client.log</string>
+  </dict>
+</plist>

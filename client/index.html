@@ -27,11 +27,40 @@
           </label>
           <button id="apply-aoi" type="button">Apply</button>
         </div>
+        <div class="sync-switch">
+          <label class="field compact">
+            <span>Sync</span>
+            <select id="sync-type">
+              <option value="snapshot">snapshot</option>
+              <option value="delta">delta</option>
+              <option value="interpolation">interpolation</option>
+              <option value="priority">priority</option>
+            </select>
+          </label>
+          <button id="apply-sync" type="button">Apply</button>
+        </div>
+        <div class="network-switch">
+          <label class="field tiny">
+            <span>Latency</span>
+            <input id="latency-ms" type="number" min="0" step="10" />
+          </label>
+          <label class="field tiny">
+            <span>Jitter</span>
+            <input id="jitter-ms" type="number" min="0" step="10" />
+          </label>
+          <label class="field tiny">
+            <span>Loss %</span>
+            <input id="packet-loss" type="number" min="0" max="100" step="1" />
+          </label>
+          <button id="apply-network" type="button">Apply</button>
+        </div>
         <div class="toggles">
           <label><input id="debug-mode" type="checkbox" checked /> Debug</label>
           <label><input id="show-grid" type="checkbox" checked /> Grid</label>
           <label><input id="show-aoi" type="checkbox" checked /> AOI</label>
           <label><input id="show-all" type="checkbox" checked /> All</label>
+          <label><input id="interpolation" type="checkbox" checked /> Interp</label>
+          <label><input id="prediction" type="checkbox" /> Predict</label>
         </div>
         <div class="status-line">
           <span id="status-dot" class="status-dot"></span>
