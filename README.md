@@ -13,15 +13,25 @@ The default server listens on `0.0.0.0:8100` and accepts WebSocket clients at `/
 You can also manage the server with the helper script:
 
 ```bash
+./scripts/worldserver.sh build
 ./scripts/worldserver.sh start
 ./scripts/worldserver.sh status
 ./scripts/worldserver.sh reload
 ./scripts/worldserver.sh restart
 ./scripts/worldserver.sh stop
+./scripts/worldserver.sh foreground
 ```
 
 Runtime files are written to `tmp/worldserver/`. Use `CONFIG=/path/to/dev.yaml ./scripts/worldserver.sh reload`
 to apply another config file after validation. Reload applies config changes with a graceful restart.
+
+The worldserver follows the personal service platform endpoints:
+
+- `GET /api/health` returns fast process health.
+- `GET /api/ready` returns readiness and dependency details. AOI Demo currently has no service dependencies.
+- `GET /api/version` returns version, build, config path, listen address, and non-sensitive runtime config.
+
+The legacy `GET /health` endpoint is kept for compatibility.
 
 ## Run the client
 

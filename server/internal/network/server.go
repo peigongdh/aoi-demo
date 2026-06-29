@@ -16,11 +16,22 @@ import (
 	"aoi-demo/server/internal/world"
 )
 
+const serviceName = "aoi-demo-worldserver"
+
+type ServiceInfo struct {
+	Service    string
+	Version    string
+	Commit     string
+	BuildTime  string
+	ConfigPath string
+}
+
 type Server struct {
 	cfg      config.Config
 	world    *world.World
 	http     *http.Server
 	netem    *Simulator
+	info     ServiceInfo
 	nextID   uint64
 	mu       sync.RWMutex
 	clients  map[string]*Client
@@ -34,18 +45,45 @@ type Client struct {
 }
 
 func NewServer(cfg config.Config, world *world.World) *Server {
+	return NewServerWithInfo(cfg, world, ServiceInfo{})
+}
+
+func NewServerWithInfo(cfg config.Config, world *world.World, info ServiceInfo) *Server {
 	return &Server{
 		cfg:      cfg,
 		world:    world,
 		netem:    NewSimulator(cfg.Network),
+		info:     normalizeServiceInfo(info),
 		clients:  map[string]*Client{},
 		byPlayer: map[entity.EntityID]*Client{},
 	}
 }
 
-func (s *Server) Start(ctx context.Context) error {
+func normalizeServiceInfo(info ServiceInfo) ServiceInfo {
+	if info.Service == "" {
+		info.Service = serviceName
+	}
+	if info.Version == "" {
+		info.Version = "dev"
+	}
+	if info.Commit == "" {
+		info.Commit = "unknown"
+	}
+	if info.BuildTime == "" {
+		info.BuildTime = "unknown"
+	}
+	if info.ConfigPath == "" {
+		info.ConfigPath = "server/config/dev.yaml"
+	}
+	return info
+}
+
+func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", s.handleWebSocket)
+	mux.HandleFunc("/api/health", s.handleHealth)
+	mux.HandleFunc("/api/ready", s.handleReady)
+	mux.HandleFunc("/api/version", s.handleVersion)
 	mux.HandleFunc("/api/aoi", s.handleAOI)
 	mux.HandleFunc("/api/sync", s.handleSync)
 	mux.HandleFunc("/api/network", s.handleNetwork)
@@ -57,10 +95,13 @@ func (s *Server) Start(ctx context.Context) error {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte("AOI worldserver. WebSocket endpoint: /ws\n"))
 	})
+	return mux
+}
 
+func (s *Server) Start(ctx context.Context) error {
 	s.http = &http.Server{
 		Addr:              s.cfg.Server.ListenAddr,
-		Handler:           mux,
+		Handler:           s.routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -279,6 +320,91 @@ func (s *Server) sendMessage(client *Client, message protocol.Message) {
 	time.AfterFunc(plan.Delay, send)
 }
 
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	setAPIHeaders(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET, OPTIONS")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, healthReport{
+		Status:  "ok",
+		Service: s.info.Service,
+		Time:    time.Now().Format(time.RFC3339),
+	})
+}
+
+func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
+	setAPIHeaders(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET, OPTIONS")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, readinessReport{
+		Status:       "ready",
+		Service:      s.info.Service,
+		Time:         time.Now().Format(time.RFC3339),
+		Dependencies: []dependencyReport{},
+	})
+}
+
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	setAPIHeaders(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET, OPTIONS")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, versionReport{
+		Service:    s.info.Service,
+		Version:    s.info.Version,
+		Commit:     s.info.Commit,
+		BuildTime:  s.info.BuildTime,
+		ConfigPath: s.info.ConfigPath,
+		ListenAddr: s.cfg.Server.ListenAddr,
+		Runtime: map[string]any{
+			"tick_rate": s.cfg.Server.TickRate,
+		},
+		World: map[string]any{
+			"width":     s.cfg.World.Width,
+			"height":    s.cfg.World.Height,
+			"npc_count": s.cfg.World.NPCCount,
+		},
+		AOI: map[string]any{
+			"type":      s.world.AOIName(),
+			"grid_size": s.cfg.AOI.GridSize,
+			"radius":    s.cfg.Player.AOIRadius,
+		},
+		Sync: map[string]any{
+			"type":                s.world.SyncName(),
+			"snapshot_rate":       s.cfg.Sync.SnapshotRate,
+			"priority_low_rate":   s.cfg.Sync.PriorityLowRate,
+			"priority_near_ratio": s.cfg.Sync.PriorityNearRatio,
+		},
+		Network: map[string]any{
+			"latency_ms":  s.cfg.Network.LatencyMS,
+			"jitter_ms":   s.cfg.Network.JitterMS,
+			"packet_loss": s.cfg.Network.PacketLoss,
+		},
+	})
+}
+
 func (s *Server) handleAOI(w http.ResponseWriter, r *http.Request) {
 	setAPIHeaders(w)
 	if r.Method == http.MethodOptions {
@@ -364,6 +490,48 @@ func setAPIHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+}
+
+type healthReport struct {
+	Status  string `json:"status"`
+	Service string `json:"service"`
+	Time    string `json:"time"`
+}
+
+type readinessReport struct {
+	Status       string             `json:"status"`
+	Service      string             `json:"service"`
+	Time         string             `json:"time"`
+	Dependencies []dependencyReport `json:"dependencies"`
+}
+
+type dependencyReport struct {
+	ID       string `json:"id,omitempty"`
+	Required bool   `json:"required,omitempty"`
+	Check    string `json:"check,omitempty"`
+	Status   string `json:"status,omitempty"`
+	Message  string `json:"message,omitempty"`
+	URL      string `json:"url,omitempty"`
+}
+
+type versionReport struct {
+	Service    string         `json:"service"`
+	Version    string         `json:"version"`
+	Commit     string         `json:"commit"`
+	BuildTime  string         `json:"build_time"`
+	ConfigPath string         `json:"config_path"`
+	ListenAddr string         `json:"listen_addr"`
+	Runtime    map[string]any `json:"runtime"`
+	World      map[string]any `json:"world"`
+	AOI        map[string]any `json:"aoi"`
+	Sync       map[string]any `json:"sync"`
+	Network    map[string]any `json:"network"`
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 func writeAOIResponse(w http.ResponseWriter, current string) {

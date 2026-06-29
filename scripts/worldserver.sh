@@ -9,7 +9,7 @@ RUN_DIR="${RUN_DIR:-$ROOT_DIR/tmp/worldserver}"
 BIN="$RUN_DIR/worldserver"
 PID_FILE="${PID_FILE:-$RUN_DIR/worldserver.pid}"
 LOG_FILE="${LOG_FILE:-$RUN_DIR/worldserver.log}"
-HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8100/health}"
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8100/api/health}"
 CLIENT_URL="${CLIENT_URL:-http://127.0.0.1:8101/}"
 STOP_TIMEOUT="${STOP_TIMEOUT:-10}"
 LABEL="${LABEL:-local.aoi-demo-worldserver}"
@@ -27,6 +27,7 @@ usage() {
 Usage: $(basename "$0") <command>
 
 Commands:
+  build          Build the worldserver binary
   start          Build and start the worldserver and LAN client
   stop           Gracefully stop the worldserver and LAN client
   restart        Stop and start the worldserver and LAN client
@@ -34,6 +35,7 @@ Commands:
   status         Show process and health status
   check-config   Validate the configured YAML file
   logs           Tail the worldserver log
+  foreground     Run the worldserver in the foreground for debugging
 
 Environment:
   CONFIG         Config file path (default: $CONFIG)
@@ -41,6 +43,9 @@ Environment:
   HEALTH_URL     Health endpoint for status (default: $HEALTH_URL)
   CLIENT_URL     Client endpoint for status (default: $CLIENT_URL)
   STOP_TIMEOUT   Seconds to wait for graceful stop (default: $STOP_TIMEOUT)
+  VERSION        Version string embedded into /api/version (default: dev)
+  COMMIT         Commit string embedded into /api/version (default: git short SHA)
+  BUILD_TIME     Build time embedded into /api/version (default: current UTC time)
 EOF
 }
 
@@ -70,7 +75,16 @@ is_client_loaded() {
 
 build_binary() {
 	ensure_runtime_dir
-	(cd "$ROOT_DIR" && go build -o "$BIN" ./server/cmd/worldserver)
+	local build_version="${VERSION:-dev}"
+	local build_commit="${COMMIT:-unknown}"
+	local build_time="${BUILD_TIME:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
+
+	if [[ "$build_commit" == "unknown" ]] && command -v git >/dev/null 2>&1; then
+		build_commit="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
+	fi
+
+	(cd "$ROOT_DIR" && go build -ldflags "-X main.version=$build_version -X main.commit=$build_commit -X main.buildTime=$build_time" -o "$BIN" ./server/cmd/worldserver)
+	echo "built $BIN (version=$build_version commit=$build_commit)"
 }
 
 pid_from_file() {
@@ -125,6 +139,12 @@ clear_stale_pid() {
 check_config() {
 	build_binary
 	"$BIN" --config "$CONFIG" --check-config
+}
+
+foreground_server() {
+	check_config >/dev/null
+	echo "worldserver foreground: $BIN --config $CONFIG"
+	exec "$BIN" --config "$CONFIG"
 }
 
 start_server() {
@@ -332,6 +352,9 @@ status_client() {
 
 command="${1:-}"
 case "$command" in
+	build)
+		build_binary
+		;;
 	start)
 		start_server
 		;;
@@ -352,6 +375,9 @@ case "$command" in
 		;;
 	logs)
 		tail_logs
+		;;
+	foreground)
+		foreground_server
 		;;
 	-h|--help|help|"")
 		usage

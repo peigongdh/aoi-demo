@@ -16,6 +16,12 @@ import (
 	"aoi-demo/server/internal/world"
 )
 
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildTime = "unknown"
+)
+
 func main() {
 	configPath := flag.String("config", "server/config/dev.yaml", "path to yaml config")
 	checkConfig := flag.Bool("check-config", false, "load config and exit")
@@ -38,7 +44,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	server := network.NewServer(cfg, w)
+	server := network.NewServerWithInfo(cfg, w, network.ServiceInfo{
+		Version:    version,
+		Commit:     commit,
+		BuildTime:  buildTime,
+		ConfigPath: *configPath,
+	})
 	fmt.Printf("worldserver listening on %s/ws, aoi=%s, sync=%s, tick_rate=%d\n", cfg.Server.ListenAddr, w.AOIName(), w.SyncName(), cfg.Server.TickRate)
 
 	if err := server.Start(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
