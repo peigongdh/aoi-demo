@@ -19,11 +19,16 @@ You can also manage the server with the helper script:
 ./scripts/worldserver.sh reload
 ./scripts/worldserver.sh restart
 ./scripts/worldserver.sh stop
+./scripts/worldserver.sh logs
+./scripts/worldserver.sh logs -f
 ./scripts/worldserver.sh foreground
 ```
 
 Runtime files are written to `tmp/worldserver/`. Use `CONFIG=/path/to/dev.yaml ./scripts/worldserver.sh reload`
 to apply another config file after validation. Reload applies config changes with a graceful restart.
+`status` checks `/api/health`, `/api/ready`, and the LAN client URL; override them with `HEALTH_URL`,
+`READY_URL`, or `CLIENT_URL` when needed. `logs` prints the latest 80 lines from the worldserver and client
+logs; use `LINES=200 ./scripts/worldserver.sh logs` for more history, or add `-f` to follow.
 
 The worldserver follows the personal service platform endpoints:
 

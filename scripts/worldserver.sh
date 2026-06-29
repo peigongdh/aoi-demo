@@ -10,6 +10,7 @@ BIN="$RUN_DIR/worldserver"
 PID_FILE="${PID_FILE:-$RUN_DIR/worldserver.pid}"
 LOG_FILE="${LOG_FILE:-$RUN_DIR/worldserver.log}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8100/api/health}"
+READY_URL="${READY_URL:-http://127.0.0.1:8100/api/ready}"
 CLIENT_URL="${CLIENT_URL:-http://127.0.0.1:8101/}"
 STOP_TIMEOUT="${STOP_TIMEOUT:-10}"
 LABEL="${LABEL:-local.aoi-demo-worldserver}"
@@ -34,14 +35,16 @@ Commands:
   reload         Validate config, then restart to apply it
   status         Show process and health status
   check-config   Validate the configured YAML file
-  logs           Tail the worldserver log
+  logs [-f]      Show recent worldserver and client logs; use -f/--follow to follow
   foreground     Run the worldserver in the foreground for debugging
 
 Environment:
   CONFIG         Config file path (default: $CONFIG)
   RUN_DIR        Runtime directory (default: $RUN_DIR)
   HEALTH_URL     Health endpoint for status (default: $HEALTH_URL)
+  READY_URL      Readiness endpoint for status (default: $READY_URL)
   CLIENT_URL     Client endpoint for status (default: $CLIENT_URL)
+  LINES          Log lines shown by logs (default: 80)
   STOP_TIMEOUT   Seconds to wait for graceful stop (default: $STOP_TIMEOUT)
   VERSION        Version string embedded into /api/version (default: dev)
   COMMIT         Commit string embedded into /api/version (default: git short SHA)
@@ -245,6 +248,12 @@ status_server() {
 				echo "health: failed ($HEALTH_URL)"
 				status=1
 			fi
+			if curl -fsS --max-time 2 "$READY_URL" >/dev/null; then
+				echo "ready: ok ($READY_URL)"
+			else
+				echo "ready: failed ($READY_URL)"
+				status=1
+			fi
 		fi
 	elif is_loaded; then
 		echo "worldserver launchd job is loaded but no live pid was recorded"
@@ -260,7 +269,24 @@ status_server() {
 
 tail_logs() {
 	ensure_runtime_dir
-	tail -n "${LINES:-80}" -f "$LOG_FILE" "$CLIENT_LOG_FILE"
+	local follow_arg=""
+	case "${1:-}" in
+		-f|--follow)
+			follow_arg="-f"
+			;;
+		"")
+			;;
+		*)
+			echo "unknown logs option: $1" >&2
+			echo "usage: $(basename "$0") logs [-f|--follow]" >&2
+			return 2
+			;;
+	esac
+	if [[ -n "$follow_arg" ]]; then
+		tail -n "${LINES:-80}" "$follow_arg" "$LOG_FILE" "$CLIENT_LOG_FILE"
+	else
+		tail -n "${LINES:-80}" "$LOG_FILE" "$CLIENT_LOG_FILE"
+	fi
 }
 
 start_client() {
@@ -351,6 +377,9 @@ status_client() {
 }
 
 command="${1:-}"
+if [[ $# -gt 0 ]]; then
+	shift
+fi
 case "$command" in
 	build)
 		build_binary
@@ -374,7 +403,7 @@ case "$command" in
 		check_config
 		;;
 	logs)
-		tail_logs
+		tail_logs "$@"
 		;;
 	foreground)
 		foreground_server
